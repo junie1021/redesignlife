@@ -18,9 +18,6 @@ export default function App() {
       className="min-h-screen bg-background"
       style={{ fontFamily: "'Noto Sans KR', -apple-system, sans-serif" }}
     >
-      <button className="bg-red-500 text-white p-5 text-2xl font-bold rounded-2xl shadow-2xl">
-        Tailwind 작동 테스트
-        </button>
 
       <Nav view={view} onNavigate={setView} />
 
