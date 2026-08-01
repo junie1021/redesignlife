@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class TestResultRequest(BaseModel):
+    user_id: str | None = None
     answers: list[str]
 
 
@@ -28,6 +29,16 @@ class ErrorDetail(BaseModel):
 class ErrorResponse(BaseModel):
     success: bool
     error: ErrorDetail
+
+
+class HealthData(BaseModel):
+    status: str
+    database: str
+
+
+class HealthResponse(BaseModel):
+    success: bool
+    data: HealthData
 
 
 class ScheduleCreateRequest(BaseModel):
@@ -166,6 +177,17 @@ class ScheduleListData(BaseModel):
 class ScheduleListResponse(BaseModel):
     success: bool
     data: ScheduleListData
+
+
+class ScheduleRangeData(BaseModel):
+    start_date: str
+    end_date: str
+    schedules: list[ScheduleData]
+
+
+class ScheduleRangeResponse(BaseModel):
+    success: bool
+    data: ScheduleRangeData
 
 
 class ScheduleDeleteData(BaseModel):

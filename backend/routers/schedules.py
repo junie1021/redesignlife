@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 from typing import Annotated
 from uuid import uuid4
 
@@ -8,6 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..errors import (
+    INVALID_DATE_RANGE_RESPONSE,
+    INVALID_TIME_RANGE_RESPONSE,
+    NO_UPDATE_FIELDS_RESPONSE,
+    SCHEDULE_NOT_FOUND_RESPONSE,
+    USER_NOT_FOUND_RESPONSE,
+)
 from ..models import Schedule, User
 from ..schemas import (
     ErrorResponse,
@@ -18,49 +25,15 @@ from ..schemas import (
     ScheduleConflictResponse,
     ScheduleItem,
     ScheduleListResponse,
+    ScheduleRangeResponse,
     ScheduleData,
     ScheduleDeleteResponse,
     ScheduleUpdateRequest,
 )
+from ..services.schedule_utils import time_ranges_overlap
 
 
 router = APIRouter(prefix="/api", tags=["schedules"])
-
-INVALID_SCHEDULE_RESPONSE = {
-    "success": False,
-    "error": {
-        "code": "INVALID_SCHEDULE_DATA",
-        "message": "일정 정보를 올바르게 입력해주세요.",
-    },
-}
-USER_NOT_FOUND_RESPONSE = {
-    "success": False,
-    "error": {
-        "code": "USER_NOT_FOUND",
-        "message": "해당 사용자를 찾을 수 없습니다.",
-    },
-}
-INVALID_TIME_RANGE_RESPONSE = {
-    "success": False,
-    "error": {
-        "code": "INVALID_TIME_RANGE",
-        "message": "시작 시간은 종료 시간보다 빨라야 합니다.",
-    },
-}
-SCHEDULE_NOT_FOUND_RESPONSE = {
-    "success": False,
-    "error": {
-        "code": "SCHEDULE_NOT_FOUND",
-        "message": "해당 일정을 찾을 수 없습니다.",
-    },
-}
-NO_UPDATE_FIELDS_RESPONSE = {
-    "success": False,
-    "error": {
-        "code": "NO_UPDATE_FIELDS",
-        "message": "수정할 항목을 입력해주세요.",
-    },
-}
 
 
 def schedule_to_item(schedule: Schedule) -> ScheduleItem:
@@ -83,15 +56,6 @@ def schedule_to_data(schedule: Schedule) -> ScheduleData:
         user_id=schedule.user_id,
         date=schedule.date.isoformat(),
     )
-
-
-def time_ranges_overlap(
-    first_start: time,
-    first_end: time,
-    second_start: time,
-    second_end: time,
-) -> bool:
-    return first_start < second_end and first_end > second_start
 
 
 @router.post(
@@ -138,7 +102,7 @@ def create_schedule(
 
 
 @router.get(
-    "/schedules",
+    "/days/{date}/tasks",
     response_model=ScheduleListResponse,
     responses={
         400: {"model": ErrorResponse},
@@ -147,7 +111,7 @@ def create_schedule(
 )
 def get_schedules(
     user_id: Annotated[str, Query(min_length=1)],
-    schedule_date: Annotated[date, Query(alias="date")],
+    schedule_date: Annotated[date, Path(alias="date")],
     db: Session = Depends(get_db),
 ) -> ScheduleListResponse | JSONResponse:
     user = db.get(User, user_id)
@@ -166,6 +130,49 @@ def get_schedules(
         data={
             "date": schedule_date.isoformat(),
             "schedules": [schedule_to_item(schedule) for schedule in schedules],
+        },
+    )
+
+
+@router.get(
+    "/schedules/range",
+    response_model=ScheduleRangeResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+    },
+)
+def get_schedules_in_range(
+    user_id: Annotated[str, Query(min_length=1)],
+    start_date: Annotated[date, Query()],
+    end_date: Annotated[date, Query()],
+    db: Session = Depends(get_db),
+) -> ScheduleRangeResponse | JSONResponse:
+    user = db.get(User, user_id)
+    if user is None:
+        return JSONResponse(status_code=404, content=USER_NOT_FOUND_RESPONSE)
+
+    range_days = (end_date - start_date).days
+    if range_days < 0 or range_days > 30:
+        return JSONResponse(status_code=400, content=INVALID_DATE_RANGE_RESPONSE)
+
+    statement = (
+        select(Schedule)
+        .where(
+            Schedule.user_id == user_id,
+            Schedule.date >= start_date,
+            Schedule.date <= end_date,
+        )
+        .order_by(Schedule.date, Schedule.start_time)
+    )
+    schedules = db.scalars(statement).all()
+
+    return ScheduleRangeResponse(
+        success=True,
+        data={
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "schedules": [schedule_to_data(schedule) for schedule in schedules],
         },
     )
 

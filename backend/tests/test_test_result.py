@@ -28,16 +28,16 @@ def test_create_test_result_and_tie_breaking() -> None:
         try:
             with TestClient(main.app) as client:
                 response = client.post(
-                    "/api/test-result",
+                    "/api/users/type-test",
                     json={"answers": ["worry", "dopamine", "dopamine", "worry"]},
                 )
                 second_response = client.post(
-                    "/api/test-result",
+                    "/api/users/type-test",
                     json={"answers": ["worry", "dopamine", "dopamine", "worry"]},
                 )
 
-            assert response.status_code == 201
-            assert second_response.status_code == 201
+            assert response.status_code == 200
+            assert second_response.status_code == 200
             body = response.json()
             second_body = second_response.json()
             assert body["success"] is True
@@ -57,7 +57,7 @@ def test_create_test_result_and_tie_breaking() -> None:
 def test_rejects_invalid_answers() -> None:
     with TestClient(main.app) as client:
         response = client.post(
-            "/api/test-result",
+            "/api/users/type-test",
             json={"answers": ["perfectionist", "unknown"]},
         )
 
@@ -68,4 +68,60 @@ def test_rejects_invalid_answers() -> None:
             "code": "INVALID_TEST_ANSWERS",
             "message": "심리테스트 답변을 올바르게 입력해주세요.",
         },
+    }
+
+
+def test_updates_existing_user_type() -> None:
+    with TemporaryDirectory() as temp_dir:
+        database_url = f"sqlite:///{(Path(temp_dir) / 'test.db').as_posix()}"
+        test_engine = create_engine(
+            database_url,
+            connect_args={"check_same_thread": False},
+        )
+        testing_session = sessionmaker(bind=test_engine)
+        Base.metadata.create_all(bind=test_engine)
+
+        def override_get_db():
+            with testing_session() as db:
+                yield db
+
+        main.app.dependency_overrides[get_db] = override_get_db
+        try:
+            with TestClient(main.app) as client:
+                created = client.post(
+                    "/api/users/type-test",
+                    json={"answers": ["worry", "worry", "dopamine", "overloaded"]},
+                )
+                user_id = created.json()["data"]["user_id"]
+                updated = client.post(
+                    "/api/users/type-test",
+                    json={
+                        "user_id": user_id,
+                        "answers": [
+                            "perfectionist",
+                            "perfectionist",
+                            "dopamine",
+                            "overloaded",
+                        ],
+                    },
+                )
+
+            assert updated.status_code == 200
+            assert updated.json()["data"] == {
+                "user_id": user_id,
+                "user_type": "perfectionist",
+            }
+        finally:
+            main.app.dependency_overrides.clear()
+            test_engine.dispose()
+
+
+def test_health_checks_database() -> None:
+    with TestClient(main.app) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "success": True,
+        "data": {"status": "ok", "database": "ok"},
     }

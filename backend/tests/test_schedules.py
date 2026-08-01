@@ -165,8 +165,8 @@ def test_gets_only_matching_schedules_in_start_time_order(client_and_session) ->
         db.commit()
 
     response = client.get(
-        "/api/schedules",
-        params={"user_id": user_id, "date": "2026-08-02"},
+        "/api/days/2026-08-02/tasks",
+        params={"user_id": user_id},
     )
 
     assert response.status_code == 200
@@ -186,8 +186,8 @@ def test_get_schedules_returns_empty_list(client_and_session) -> None:
         db.commit()
 
     response = client.get(
-        "/api/schedules",
-        params={"user_id": user_id, "date": "2026-08-02"},
+        "/api/days/2026-08-02/tasks",
+        params={"user_id": user_id},
     )
 
     assert response.status_code == 200
@@ -200,8 +200,8 @@ def test_get_schedules_returns_empty_list(client_and_session) -> None:
 def test_get_schedules_returns_404_for_unknown_user(client_and_session) -> None:
     client, _ = client_and_session
     response = client.get(
-        "/api/schedules",
-        params={"user_id": str(uuid4()), "date": "2026-08-02"},
+        "/api/days/2026-08-02/tasks",
+        params={"user_id": str(uuid4())},
     )
 
     assert response.status_code == 404
@@ -211,8 +211,8 @@ def test_get_schedules_returns_404_for_unknown_user(client_and_session) -> None:
 def test_get_schedules_rejects_invalid_date(client_and_session) -> None:
     client, _ = client_and_session
     response = client.get(
-        "/api/schedules",
-        params={"user_id": str(uuid4()), "date": "2026-02-30"},
+        "/api/days/2026-02-30/tasks",
+        params={"user_id": str(uuid4())},
     )
 
     assert response.status_code == 400
@@ -452,3 +452,96 @@ def test_delete_returns_404_when_repeated(client_and_session) -> None:
     assert first_response.status_code == 200
     assert second_response.status_code == 404
     assert second_response.json()["error"]["code"] == "SCHEDULE_NOT_FOUND"
+
+
+def test_gets_schedules_in_inclusive_range(client_and_session) -> None:
+    client, testing_session = client_and_session
+    user_id = str(uuid4())
+    with testing_session() as db:
+        db.add(User(id=user_id, user_type="perfectionist"))
+        db.flush()
+        add_schedule(db, user_id, date(2026, 8, 3), "둘째 날 오후", time(15, 0))
+        add_schedule(db, user_id, date(2026, 8, 2), "첫째 날", time(10, 0))
+        add_schedule(db, user_id, date(2026, 8, 3), "둘째 날 오전", time(9, 0))
+        add_schedule(db, user_id, date(2026, 9, 3), "범위 밖", time(8, 0))
+        db.commit()
+
+    response = client.get(
+        "/api/schedules/range",
+        params={
+            "user_id": user_id,
+            "start_date": "2026-08-02",
+            "end_date": "2026-08-03",
+        },
+    )
+
+    assert response.status_code == 200
+    schedules = response.json()["data"]["schedules"]
+    assert [schedule["title"] for schedule in schedules] == [
+        "첫째 날",
+        "둘째 날 오전",
+        "둘째 날 오후",
+    ]
+
+
+def test_schedule_range_returns_empty_list(client_and_session) -> None:
+    client, testing_session = client_and_session
+    user_id = str(uuid4())
+    with testing_session() as db:
+        db.add(User(id=user_id, user_type="worry"))
+        db.commit()
+
+    response = client.get(
+        "/api/schedules/range",
+        params={
+            "user_id": user_id,
+            "start_date": "2026-08-02",
+            "end_date": "2026-09-01",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["schedules"] == []
+
+
+@pytest.mark.parametrize(
+    ("start_date", "end_date"),
+    [("2026-08-02", "2026-09-02"), ("2026-08-03", "2026-08-02")],
+)
+def test_schedule_range_rejects_invalid_range(
+    client_and_session,
+    start_date,
+    end_date,
+) -> None:
+    client, testing_session = client_and_session
+    user_id = str(uuid4())
+    with testing_session() as db:
+        db.add(User(id=user_id, user_type="dopamine"))
+        db.commit()
+
+    response = client.get(
+        "/api/schedules/range",
+        params={
+            "user_id": user_id,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "INVALID_DATE_RANGE"
+
+
+def test_schedule_range_returns_404_for_unknown_user(client_and_session) -> None:
+    client, _ = client_and_session
+    response = client.get(
+        "/api/schedules/range",
+        params={
+            "user_id": str(uuid4()),
+            "start_date": "2026-08-02",
+            "end_date": "2026-08-03",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "USER_NOT_FOUND"
