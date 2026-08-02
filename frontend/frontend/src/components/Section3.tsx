@@ -23,10 +23,11 @@ const mkPlan = (): PlanTask => ({
 
 interface Section3Props {
   typeKey: TypeKey;
+  userId: string | null;
   onRestart: () => void;
 }
 
-export function Section3({ typeKey, onRestart }: Section3Props) {
+export function Section3({ typeKey, userId, onRestart }: Section3Props) {
   const type = TYPE_DATA[typeKey];
 
   const [tasks, setTasks] = useState<PlanTask[]>([mkPlan(), mkPlan(), mkPlan()]);
@@ -42,11 +43,76 @@ export function Section3({ typeKey, onRestart }: Section3Props) {
   const addTask = () => setTasks(prev => [...prev, mkPlan()]);
   const deleteTask = (id: number) => setTasks(prev => prev.filter(t => t.id !== id));
 
-  const handleAI = () => {
-    setAiData({
-      analysis: analyzePlan(tasks, typeKey),
-      optimized: aiOptimizePlan(tasks, typeKey),
-    });
+  const handleAI = async () => {
+    const analysis = analyzePlan(tasks, typeKey);
+    const fallbackOptimized = aiOptimizePlan(tasks, typeKey);
+
+    try {
+      if (!userId) {
+        throw new Error("missing user id");
+      }
+
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const response = await fetch("/api/plans/optimize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          date: tomorrow.toISOString().slice(0, 10),
+          available_start_time: "09:00",
+          available_end_time: "18:00",
+          tasks: tasks
+            .filter(task => task.name.trim())
+            .map(task => ({
+              title: task.name,
+              estimated_minutes: Math.max(
+                30,
+                task.startTime && task.endTime
+                  ? Math.max(30, Math.round((Number(task.endTime.slice(0, 2)) * 60 + Number(task.endTime.slice(3, 5)) - (Number(task.startTime.slice(0, 2)) * 60 + Number(task.startTime.slice(3, 5)))) / 15) * 15)
+                  : 60,
+              ),
+              priority: Math.max(1, Math.min(3, task.priority || 1)),
+              category: getCat(task.name),
+            })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("ai request failed");
+      }
+
+      const body = await response.json();
+      const optimized = body.data.optimized_schedules.map((item: {
+        title: string;
+        start_time: string;
+        end_time: string;
+        reason: string;
+        category?: string | null;
+      }, index: number): AIOptTask => ({
+        id: index + 1,
+        name: item.title,
+        aiStart: item.start_time,
+        aiEnd: item.end_time,
+        isFixed: false,
+        isAIAdded: true,
+        changed: true,
+        catKey: getCat(item.title),
+        note: item.category ?? "",
+        reason: item.reason,
+      }));
+
+      setAiData({ analysis, optimized });
+    } catch {
+      setAiData({
+        analysis,
+        optimized: fallbackOptimized,
+      });
+    }
+
     setShowAI(true);
   };
 

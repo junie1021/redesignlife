@@ -8,6 +8,7 @@ import { Section3 } from "../components/Section3";
 export default function App() {
   const [view, setView] = useState<ViewKey>("s1");
   const [userType, setUserType] = useState<TypeKey | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const resolvedType: TypeKey = userType ?? "perfectionist";
 
@@ -25,6 +26,7 @@ export default function App() {
         <Section1
           typeKey={userType}
           onSetType={setUserType}
+          onUserReady={setUserId}
           onNext={() => setView("s2")}
         />
       )}
@@ -41,6 +43,7 @@ export default function App() {
         <Section3
           key={resolvedType}
           typeKey={resolvedType}
+          userId={userId}
           onRestart={() => setView("s1")}
         />
       )}
