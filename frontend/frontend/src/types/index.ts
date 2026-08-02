@@ -19,6 +19,7 @@ export interface PlanTask {
   endTime: string;
   priority: number;
   scheduleType: ScheduleType;
+  category?: CatKey;
 }
 
 export interface AIOptTask {
