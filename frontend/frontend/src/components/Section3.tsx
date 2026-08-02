@@ -23,10 +23,38 @@ const mkPlan = (): PlanTask => ({
 });
 
 const normalizeTimeInput = (value: string) => {
-  const digits = value.replace(/\D/g, "").slice(0, 4);
-  if (digits.length <= 2) return digits;
-  if (digits.length === 3) return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const colonParts = trimmed.split(":");
+  if (colonParts.length === 2) {
+    const hour = Number(colonParts[0] ?? 0);
+    const minute = Number(colonParts[1] ?? 0);
+    const safeHour = hour > 23 ? 0 : hour;
+    const safeMinute = minute > 59 ? 59 : minute;
+    return `${String(safeHour).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
+  }
+
+  const digits = trimmed.replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) {
+    const hour = Number(digits || 0);
+    const safeHour = hour > 23 ? 0 : hour;
+    return String(safeHour).padStart(2, "0");
+  }
+
+  if (digits.length === 3) {
+    const hour = Number(digits.slice(0, 2) || 0);
+    const minute = Number(digits.slice(2, 3) || 0);
+    const safeHour = hour > 23 ? 0 : hour;
+    const safeMinute = minute > 5 ? 5 : minute;
+    return `${String(safeHour).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
+  }
+
+  const hour = Number(digits.slice(0, 2) || 0);
+  const minute = Number(digits.slice(2, 4) || 0);
+  const safeHour = hour > 23 ? 0 : hour;
+  const safeMinute = minute > 59 ? 59 : minute;
+  return `${String(safeHour).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
 };
 
 interface Section3Props {
