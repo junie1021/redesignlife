@@ -87,6 +87,69 @@ class RecoveryResponse(BaseModel):
     data: RecoveryData
 
 
+class DailyAnalysisTask(BaseModel):
+    title: str
+    start_time: TimeValue | None = None
+    end_time: TimeValue | None = None
+    is_completed: bool
+    satisfaction: int | None = Field(default=None, ge=1, le=5)
+    schedule_type: Literal["FIXED", "ADJUSTABLE"]
+    category: str | None = None
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def validate_optional_time(cls, value: object) -> object:
+        if value in (None, ""):
+            return None
+        return validate_hhmm(value)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        return validate_non_blank(value)
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> "DailyAnalysisTask":
+        if (self.start_time is None) != (self.end_time is None):
+            raise ValueError("start_time and end_time must both be provided")
+        if self.start_time is not None and self.start_time >= self.end_time:
+            raise ValueError("start_time must be before end_time")
+        return self
+
+
+class DailyAnalysisRequest(BaseModel):
+    user_id: str = Field(min_length=1)
+    date: DateValue
+    tasks: list[DailyAnalysisTask] = Field(min_length=1)
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def validate_date_format(cls, value: object) -> object:
+        return validate_date_string(value)
+
+
+class DailyAnalysisAIOutput(BaseModel):
+    score: int = Field(ge=0, le=100)
+    summary: str
+    problem: str
+    pattern: str
+    suggestion: str
+
+    @field_validator("summary", "problem", "pattern", "suggestion")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        return validate_non_blank(value)
+
+
+class DailyAnalysisData(DailyAnalysisAIOutput):
+    date: str
+
+
+class DailyAnalysisResponse(BaseModel):
+    success: bool
+    data: DailyAnalysisData
+
+
 class OptimizeTask(BaseModel):
     title: str
     estimated_minutes: int = Field(gt=0)
@@ -99,12 +162,36 @@ class OptimizeTask(BaseModel):
         return validate_non_blank(value)
 
 
+class FixedScheduleInput(BaseModel):
+    title: str
+    start_time: TimeValue
+    end_time: TimeValue
+    category: str | None = None
+
+    @field_validator("start_time", "end_time", mode="before")
+    @classmethod
+    def validate_times(cls, value: object) -> object:
+        return validate_hhmm(value)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        return validate_non_blank(value)
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> "FixedScheduleInput":
+        if self.start_time >= self.end_time:
+            raise ValueError("start_time must be before end_time")
+        return self
+
+
 class OptimizeRequest(BaseModel):
     user_id: str = Field(min_length=1)
     date: DateValue
     available_start_time: TimeValue
     available_end_time: TimeValue
     tasks: list[OptimizeTask] = Field(min_length=1)
+    fixed_schedules: list[FixedScheduleInput] = Field(default_factory=list)
 
     @field_validator("date", mode="before")
     @classmethod

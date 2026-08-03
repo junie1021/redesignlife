@@ -39,6 +39,7 @@ export default function App() {
         <Section2
           key={resolvedType}
           typeKey={resolvedType}
+          userId={userId}
           onNext={() => setView("s3")}
         />
       )}

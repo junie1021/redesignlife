@@ -13,6 +13,7 @@ from . import models  # noqa: F401 - registers database models on application st
 from .database import Base, engine
 from .errors import (
     INVALID_PLAN_RESPONSE,
+    INVALID_ANALYSIS_RESPONSE,
     INVALID_RECOVERY_REQUEST_RESPONSE,
     INVALID_SCHEDULE_RESPONSE,
     INVALID_TEST_ANSWERS_RESPONSE,
@@ -66,6 +67,8 @@ async def validation_exception_handler(
         content = INVALID_RECOVERY_REQUEST_RESPONSE
     elif request.url.path == "/api/plans/optimize":
         content = INVALID_PLAN_RESPONSE
+    elif request.url.path.endswith("/analysis"):
+        content = INVALID_ANALYSIS_RESPONSE
     else:
         content = INVALID_SCHEDULE_RESPONSE
     return JSONResponse(status_code=400, content=content)

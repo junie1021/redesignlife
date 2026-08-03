@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from backend import main
 from backend.ai_schemas import (
+    DailyAnalysisAIOutput,
     OptimizeAIOutput,
     OptimizedSchedule,
     RecoveryAIOutput,
@@ -33,10 +34,18 @@ class FakeAIService:
         *,
         recovery_result: RecoveryAIOutput | Exception | None = None,
         optimize_results: list[OptimizeAIOutput | Exception] | None = None,
+        analysis_result: DailyAnalysisAIOutput | Exception | None = None,
     ) -> None:
         self.recovery_result = recovery_result
         self.optimize_results = optimize_results or []
         self.optimize_calls = 0
+        self.analysis_result = analysis_result
+
+    async def analyze_day(self, context):
+        if isinstance(self.analysis_result, Exception):
+            raise self.analysis_result
+        assert self.analysis_result is not None
+        return self.analysis_result
 
     async def generate_recovery(self, context):
         if isinstance(self.recovery_result, Exception):
@@ -179,6 +188,67 @@ def optimize_payload(user_id: str) -> dict[str, object]:
             }
         ],
     }
+
+
+def analysis_payload(user_id: str) -> dict[str, object]:
+    return {
+        "user_id": user_id,
+        "date": "2026-08-02",
+        "tasks": [
+            {
+                "title": "보고서 작성",
+                "start_time": "13:00",
+                "end_time": "14:00",
+                "is_completed": True,
+                "satisfaction": 4,
+                "schedule_type": "ADJUSTABLE",
+                "category": "work",
+            }
+        ],
+    }
+
+
+def test_daily_analysis_returns_structured_ai_result(client_and_session) -> None:
+    client, testing_session = client_and_session
+    with testing_session() as db:
+        user_id = add_user(db)
+        db.commit()
+    output = DailyAnalysisAIOutput(
+        score=82,
+        summary="계획한 일을 안정적으로 수행했습니다.",
+        problem="일부 일정의 만족도가 낮았습니다.",
+        pattern="오후 일정의 완료율이 높았습니다.",
+        suggestion="내일은 어려운 일을 오후에 배치하세요.",
+    )
+    use_fake_ai(FakeAIService(analysis_result=output))
+
+    response = client.post(
+        "/api/days/2026-08-02/analysis",
+        json=analysis_payload(user_id),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["score"] == 82
+    assert response.json()["data"]["pattern"] == output.pattern
+
+
+def test_daily_analysis_returns_503_without_api_key(
+    client_and_session,
+    monkeypatch,
+) -> None:
+    client, testing_session = client_and_session
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with testing_session() as db:
+        user_id = add_user(db)
+        db.commit()
+
+    response = client.post(
+        "/api/days/2026-08-02/analysis",
+        json=analysis_payload(user_id),
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "AI_NOT_CONFIGURED"
 
 
 def test_recovery_returns_validated_plan_without_db_changes(client_and_session) -> None:
@@ -450,6 +520,30 @@ def test_optimize_returns_unscheduled_tasks_when_time_is_insufficient(
     response = client.post("/api/plans/optimize", json=optimize_payload(user_id))
     assert response.status_code == 200
     assert response.json()["data"]["unscheduled_tasks"][0]["title"] == "과제"
+
+
+def test_optimize_rejects_overlap_with_request_fixed_schedule(
+    client_and_session,
+) -> None:
+    client, testing_session = client_and_session
+    with testing_session() as db:
+        user_id = add_user(db)
+        db.commit()
+    payload = optimize_payload(user_id)
+    payload["fixed_schedules"] = [
+        {
+            "title": "회의",
+            "start_time": "09:30",
+            "end_time": "10:30",
+            "category": "work",
+        }
+    ]
+    use_fake_ai(FakeAIService(optimize_results=[optimize_output()]))
+
+    response = client.post("/api/plans/optimize", json=payload)
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "AI_INVALID_OUTPUT"
 
 
 @pytest.mark.parametrize(

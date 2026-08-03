@@ -68,6 +68,13 @@ INVALID_PLAN_RESPONSE = {
         "message": "최적화할 계획 정보를 올바르게 입력해주세요.",
     },
 }
+INVALID_ANALYSIS_RESPONSE = {
+    "success": False,
+    "error": {
+        "code": "INVALID_ANALYSIS_DATA",
+        "message": "분석할 하루 정보를 올바르게 입력해주세요.",
+    },
+}
 AI_NOT_CONFIGURED_RESPONSE = {
     "success": False,
     "error": {

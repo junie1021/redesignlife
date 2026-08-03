@@ -47,6 +47,14 @@ export interface PlanAnalysis {
   timeEfficiency: AnalysisCard;
 }
 
+export interface DailyAIAnalysis {
+  score: number;
+  summary: string;
+  problem: string;
+  pattern: string;
+  suggestion: string;
+}
+
 export interface TLRow {
   id: number;
   name: string;

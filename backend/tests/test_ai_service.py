@@ -4,7 +4,7 @@ import httpx
 import pytest
 from openai import APITimeoutError, OpenAIError
 
-from backend.ai_schemas import RecoveryAIOutput
+from backend.ai_schemas import DailyAnalysisAIOutput, RecoveryAIOutput
 from backend.services import ai_service
 
 
@@ -58,8 +58,28 @@ def test_ai_service_uses_async_responses_structured_output(monkeypatch) -> None:
     result = asyncio.run(service.generate_recovery({"date": "2026-08-02"}))
 
     assert result is parsed_output
-    assert responses.kwargs["model"] == "gpt-5-mini"
+    assert responses.kwargs["model"] == "gpt-5.6"
     assert responses.kwargs["text_format"] is RecoveryAIOutput
+    assert client.closed is True
+
+
+def test_ai_service_parses_daily_analysis(monkeypatch) -> None:
+    parsed_output = DailyAnalysisAIOutput(
+        score=75,
+        summary="오늘의 흐름을 잘 지켰습니다.",
+        problem="완료하지 못한 일정이 있습니다.",
+        pattern="오후에 집중력이 떨어졌습니다.",
+        suggestion="내일은 중요한 일을 오전에 배치하세요.",
+    )
+    responses = FakeResponses(result=parsed_output)
+    client = FakeOpenAIClient(responses)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(ai_service, "AsyncOpenAI", lambda **_: client)
+
+    result = asyncio.run(ai_service.AIService().analyze_day({"tasks": []}))
+
+    assert result is parsed_output
+    assert responses.kwargs["text_format"] is DailyAnalysisAIOutput
     assert client.closed is True
 
 

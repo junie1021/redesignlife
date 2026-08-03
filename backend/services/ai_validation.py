@@ -1,6 +1,6 @@
 from datetime import datetime, time
 
-from ..ai_schemas import OptimizeAIOutput, OptimizeRequest, RecoveryAIOutput
+from ..ai_schemas import FixedScheduleInput, OptimizeAIOutput, OptimizeRequest, RecoveryAIOutput
 from ..models import Schedule
 from .schedule_utils import planned_minutes, time_ranges_overlap
 
@@ -56,7 +56,7 @@ def validate_recovery_output(
 def validate_optimize_output(
     output: OptimizeAIOutput,
     request: OptimizeRequest,
-    fixed_schedules: list[Schedule],
+    fixed_schedules: list[Schedule | FixedScheduleInput],
 ) -> None:
     unmatched_tasks = list(request.tasks)
     optimized_ranges: list[tuple[time, time]] = []

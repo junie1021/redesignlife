@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from openai import APITimeoutError, AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
-from ..ai_schemas import OptimizeAIOutput, RecoveryAIOutput
+from ..ai_schemas import DailyAnalysisAIOutput, OptimizeAIOutput, RecoveryAIOutput
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -35,7 +35,7 @@ class AIOutputValidationError(RuntimeError):
 class AIService:
     def __init__(self) -> None:
         self.api_key = os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("OPENAI_MODEL", "gpt-5-mini")
+        self.model = os.getenv("OPENAI_MODEL", "gpt-5.6")
 
     async def _generate(
         self,
@@ -80,6 +80,17 @@ class AIService:
             "기존 FIXED 일정과 겹치지 않으며 복구 계획끼리도 겹치지 않게 하세요."
         )
         return await self._generate(RecoveryAIOutput, instructions, context)
+
+    async def analyze_day(
+        self,
+        context: dict[str, object],
+    ) -> DailyAnalysisAIOutput:
+        instructions = (
+            "당신은 사용자의 하루를 평가하는 비판단적 일정 코치입니다. "
+            "완료 여부, 계획 시간, 만족도, 일정 유형과 사용자 성향을 근거로 "
+            "0~100점과 짧고 구체적인 한국어 분석을 제공하세요."
+        )
+        return await self._generate(DailyAnalysisAIOutput, instructions, context)
 
     async def optimize_plan(
         self,

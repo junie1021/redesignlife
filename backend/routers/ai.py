@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..ai_schemas import (
+    DailyAnalysisRequest,
+    DailyAnalysisResponse,
     OptimizeRequest,
     OptimizeResponse,
     RecoveryRequest,
@@ -64,6 +66,48 @@ def schedule_context(schedule: Schedule) -> dict[str, object]:
         "is_completed": schedule.is_completed,
         "satisfaction": schedule.satisfaction,
     }
+
+
+@router.post(
+    "/days/{date}/analysis",
+    response_model=DailyAnalysisResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        404: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
+    },
+)
+async def analyze_day(
+    analysis_date: Annotated[date, Path(alias="date")],
+    payload: DailyAnalysisRequest,
+    db: Session = Depends(get_db),
+    ai_service: AIService = Depends(get_ai_service),
+) -> DailyAnalysisResponse | JSONResponse:
+    user = db.get(User, payload.user_id)
+    if user is None:
+        return JSONResponse(status_code=404, content=USER_NOT_FOUND_RESPONSE)
+
+    context = {
+        "date": analysis_date.isoformat(),
+        "user_type": user.user_type,
+        "tasks": [task.model_dump(mode="json") for task in payload.tasks],
+    }
+    try:
+        output = await ai_service.analyze_day(context)
+    except (
+        AINotConfiguredError,
+        AIServiceTimeoutError,
+        AIServiceError,
+        AIOutputValidationError,
+    ) as error:
+        return ai_error_response(error)
+
+    return DailyAnalysisResponse(
+        success=True,
+        data={"date": analysis_date.isoformat(), **output.model_dump()},
+    )
 
 
 @router.post(
@@ -154,6 +198,7 @@ async def optimize_plan(
         .order_by(Schedule.start_time)
     )
     fixed_schedules = list(db.scalars(statement))
+    all_fixed_schedules = [*fixed_schedules, *payload.fixed_schedules]
     context = {
         "date": payload.date.isoformat(),
         "available_start_time": payload.available_start_time.strftime("%H:%M"),
@@ -162,7 +207,7 @@ async def optimize_plan(
         "tasks": [task.model_dump() for task in payload.tasks],
         "fixed_schedules": [
             schedule_context(schedule) for schedule in fixed_schedules
-        ],
+        ] + [schedule.model_dump(mode="json") for schedule in payload.fixed_schedules],
     }
 
     retry_feedback: str | None = None
@@ -170,7 +215,7 @@ async def optimize_plan(
     for _ in range(2):
         try:
             output = await ai_service.optimize_plan(context, retry_feedback)
-            validate_optimize_output(output, payload, fixed_schedules)
+            validate_optimize_output(output, payload, all_fixed_schedules)
             break
         except AIResultValidationError as error:
             retry_feedback = str(error)

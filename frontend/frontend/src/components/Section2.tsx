@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Calendar, Clock, Bot, ArrowRight, Target, Brain, Lightbulb, Lock, Shuffle,
 } from "lucide-react";
-import type { TypeKey, Task, TLRow } from "../types";
+import type { DailyAIAnalysis, TypeKey, Task, TLRow } from "../types";
 import { CATS, getCat } from "../data/categories";
 import { TYPE_DATA } from "../data/typeData";
 import { Timeline } from "./Timeline";
@@ -10,26 +10,73 @@ import { StarRating } from "./ui/StarRating";
 import { ScoreRing } from "./ui/ScoreRing";
 import { InsightCard } from "./ui/InsightCard";
 import { ScheduleToggle } from "./ui/ScheduleToggle";
+import { apiFetch, formatLocalDate, getApiError } from "../utils/api";
 
 let s2IdCounter = 0;
 
 interface Section2Props {
   typeKey: TypeKey;
+  userId: string | null;
   onNext: () => void;
 }
 
-export function Section2({ typeKey, onNext }: Section2Props) {
+export function Section2({ typeKey, userId, onNext }: Section2Props) {
   const type = TYPE_DATA[typeKey];
 
   const [tasks, setTasks] = useState<Task[]>(
     type.initialTasks.map(t => ({ ...t, id: ++s2IdCounter })),
   );
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [analysis, setAnalysis] = useState<DailyAIAnalysis | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const update = (id: number, patch: Partial<Task>) =>
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
 
   const doneCount = tasks.filter(t => t.done).length;
+
+  const handleAnalysis = async () => {
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      if (!userId) {
+        throw new Error("먼저 나의 유형 알아보기에서 성향 테스트를 완료해주세요.");
+      }
+
+      const today = formatLocalDate(new Date());
+      const response = await apiFetch(`/api/days/${today}/analysis`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId,
+          date: today,
+          tasks: tasks.map(task => ({
+            title: task.name,
+            start_time: task.startTime || null,
+            end_time: task.endTime || null,
+            is_completed: task.done,
+            satisfaction: task.satisfaction || null,
+            schedule_type: task.scheduleType === "fixed" ? "FIXED" : "ADJUSTABLE",
+            category: getCat(task.name),
+          })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await getApiError(response));
+      }
+
+      const body = await response.json();
+      setAnalysis(body.data);
+      setShowAnalysis(true);
+    } catch (error) {
+      setAnalysisError(error instanceof Error ? error.message : "AI 분석 요청에 실패했습니다.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const tlRows: TLRow[] = tasks.map(t => ({
     id: t.id,
@@ -210,12 +257,18 @@ export function Section2({ typeKey, onNext }: Section2Props) {
               AI가 오늘 하루를 분석해볼게요.<br />
               완료 여부·시간·만족도·일정 유형을 채울수록 더 정확한 분석이 나와요.
             </p>
+            {analysisError && (
+              <p role="alert" className="mb-4 text-sm font-semibold text-red-600">
+                {analysisError}
+              </p>
+            )}
             <button
-              onClick={() => setShowAnalysis(true)}
+              onClick={handleAnalysis}
+              disabled={isAnalyzing}
               className="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl font-bold text-sm text-white shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-200"
               style={{ background: "linear-gradient(135deg, #7C6EF8 0%, #9F8BFA 100%)" }}
             >
-              <Bot className="w-4 h-4" />AI의 하루 분석 보기<ArrowRight className="w-4 h-4" />
+              <Bot className="w-4 h-4" />{isAnalyzing ? "AI 분석 중..." : "AI의 하루 분석 보기"}<ArrowRight className="w-4 h-4" />
             </button>
           </div>
         ) : (
@@ -227,13 +280,13 @@ export function Section2({ typeKey, onNext }: Section2Props) {
                   하루 점수
                 </p>
                 <div className="relative w-28 h-28 mb-3">
-                  <ScoreRing score={type.aiScore} color={type.accentColor} />
+                    <ScoreRing score={analysis?.score ?? 0} color={type.accentColor} />
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-3xl font-extrabold text-foreground">{type.aiScore}</span>
+                    <span className="text-3xl font-extrabold text-foreground">{analysis?.score ?? 0}</span>
                     <span className="text-xs text-muted-foreground font-medium">/ 100</span>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground leading-snug">{type.aiSummary}</p>
+                <p className="text-xs text-muted-foreground leading-snug">{analysis?.summary}</p>
               </div>
 
               <div className="col-span-3 grid grid-rows-3 gap-3">
@@ -241,19 +294,19 @@ export function Section2({ typeKey, onNext }: Section2Props) {
                   icon={<Target className="w-4 h-4 text-red-500" />}
                   iconBg="bg-red-50"
                   title="오늘의 문제"
-                  body={type.problem}
+                  body={analysis?.problem ?? ""}
                 />
                 <InsightCard
                   icon={<Brain className="w-4 h-4 text-violet-500" />}
                   iconBg="bg-violet-50"
                   title="AI가 발견한 행동 패턴"
-                  body={type.pattern}
+                  body={analysis?.pattern ?? ""}
                 />
                 <InsightCard
                   icon={<Lightbulb className="w-4 h-4 text-amber-500" />}
                   iconBg="bg-amber-50"
                   title="내일을 위한 작은 변화"
-                  body={type.suggestion}
+                  body={analysis?.suggestion ?? ""}
                 />
               </div>
             </div>

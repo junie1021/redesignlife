@@ -8,7 +8,7 @@ import { getCat } from "../data/categories";
 import { CATS } from "../data/categories";
 import { TYPE_DATA } from "../data/typeData";
 import { analyzePlan } from "../utils/aiOptimizer";
-import { apiFetch, getApiError } from "../utils/api";
+import { apiFetch, formatLocalDate, getApiError } from "../utils/api";
 import { Timeline } from "./Timeline";
 import { ScheduleToggle } from "./ui/ScheduleToggle";
 
@@ -58,6 +58,19 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
 
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
+      const adjustableTasks = tasks.filter(
+        task => task.name.trim() && task.scheduleType === "adjustable",
+      );
+      const fixedTasks = tasks.filter(
+        task => task.name.trim() && task.scheduleType === "fixed",
+      );
+
+      if (adjustableTasks.length === 0) {
+        throw new Error("AI가 조정할 수 있는 일정을 하나 이상 입력해주세요.");
+      }
+      if (fixedTasks.some(task => !task.startTime || !task.endTime)) {
+        throw new Error("고정 일정은 시작 시간과 종료 시간을 모두 입력해주세요.");
+      }
 
       const response = await apiFetch("/api/plans/optimize", {
         method: "POST",
@@ -66,11 +79,10 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
         },
         body: JSON.stringify({
           user_id: userId,
-          date: tomorrow.toISOString().slice(0, 10),
+          date: formatLocalDate(tomorrow),
           available_start_time: "09:00",
           available_end_time: "18:00",
-          tasks: tasks
-            .filter(task => task.name.trim())
+          tasks: adjustableTasks
             .map(task => ({
               title: task.name,
               estimated_minutes: Math.max(
@@ -82,6 +94,12 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
               priority: Math.max(1, Math.min(3, task.priority || 1)),
               category: getCat(task.name),
             })),
+          fixed_schedules: fixedTasks.map(task => ({
+            title: task.name,
+            start_time: task.startTime,
+            end_time: task.endTime,
+            category: getCat(task.name),
+          })),
         }),
       });
 
@@ -90,7 +108,19 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
       }
 
       const body = await response.json();
-      const optimized = body.data.optimized_schedules.map((item: {
+      const fixed: AIOptTask[] = fixedTasks.map(task => ({
+        id: task.id,
+        name: task.name,
+        aiStart: task.startTime,
+        aiEnd: task.endTime,
+        isFixed: true,
+        isAIAdded: false,
+        changed: false,
+        catKey: getCat(task.name),
+        note: "고정 일정",
+        reason: "사용자가 지정한 고정 일정은 변경하지 않았습니다.",
+      }));
+      const optimizedFromAI = body.data.optimized_schedules.map((item: {
         title: string;
         start_time: string;
         end_time: string;
@@ -108,6 +138,9 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
         note: item.category ?? "",
         reason: item.reason,
       }));
+      const optimized = [...fixed, ...optimizedFromAI].sort(
+        (a, b) => a.aiStart.localeCompare(b.aiStart),
+      );
 
       setAiData({ analysis, optimized });
       setShowAI(true);
