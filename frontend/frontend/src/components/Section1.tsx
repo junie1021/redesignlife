@@ -3,6 +3,7 @@ import { ChevronRight, ChevronLeft, Sparkles, Check, Star, ArrowRight, RotateCcw
 import type { TypeKey } from "../types";
 import { TYPE_DATA } from "../data/typeData";
 import { QUESTIONS } from "../data/questions";
+import { apiFetch, getApiError } from "../utils/api";
 
 interface Section1Props {
   typeKey: TypeKey | null;
@@ -17,6 +18,8 @@ export function Section1({ typeKey, onSetType, onUserReady, onNext }: Section1Pr
   const [answers, setAnswers] = useState<(TypeKey | null)[]>(
     Array(QUESTIONS.length).fill(null),
   );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const currentAnswer = answers[currentQ];
   const isFirst = currentQ === 0;
@@ -33,6 +36,8 @@ export function Section1({ typeKey, onSetType, onUserReady, onNext }: Section1Pr
   const handleNext = async () => {
     if (!currentAnswer) return;
     if (isLast) {
+      setIsSubmitting(true);
+      setSubmitError(null);
       const counts: Record<TypeKey, number> = {
         perfectionist: 0, dopamine: 0, overloaded: 0, worry: 0,
       };
@@ -40,10 +45,8 @@ export function Section1({ typeKey, onSetType, onUserReady, onNext }: Section1Pr
       const dominant = Object.entries(counts).sort(
         ([, a], [, b]) => b - a,
       )[0][0] as TypeKey;
-      onSetType(dominant);
-
       try {
-        const response = await fetch("/api/users/type-test", {
+        const response = await apiFetch("/api/users/type-test", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -53,15 +56,19 @@ export function Section1({ typeKey, onSetType, onUserReady, onNext }: Section1Pr
           }),
         });
 
-        if (response.ok) {
-          const body = await response.json();
-          onUserReady?.(body.data.user_id);
+        if (!response.ok) {
+          throw new Error(await getApiError(response));
         }
-      } catch {
-        // Ignore backend sync errors and continue with the local UX.
-      }
 
-      setStage("result");
+        const body = await response.json();
+        onSetType(dominant);
+        onUserReady?.(body.data.user_id);
+        setStage("result");
+      } catch (error) {
+        setSubmitError(error instanceof Error ? error.message : "백엔드에 연결할 수 없습니다.");
+      } finally {
+        setIsSubmitting(false);
+      }
     } else {
       setCurrentQ(q => q + 1);
     }
@@ -134,6 +141,11 @@ export function Section1({ typeKey, onSetType, onUserReady, onNext }: Section1Pr
           </div>
 
           {/* Navigation */}
+          {submitError && (
+            <p role="alert" className="mb-4 text-center text-sm font-semibold text-red-600">
+              {submitError}
+            </p>
+          )}
           <div className="flex items-center justify-between">
             <button
               onClick={() => !isFirst && setCurrentQ(q => q - 1)}
@@ -144,10 +156,10 @@ export function Section1({ typeKey, onSetType, onUserReady, onNext }: Section1Pr
             </button>
             <button
               onClick={handleNext}
-              disabled={!currentAnswer}
+              disabled={!currentAnswer || isSubmitting}
               className="flex items-center gap-2 px-8 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
             >
-              {isLast ? "결과 보기" : "다음"}<ChevronRight className="w-4 h-4" />
+              {isSubmitting ? "저장 중..." : isLast ? "결과 보기" : "다음"}<ChevronRight className="w-4 h-4" />
             </button>
           </div>
 

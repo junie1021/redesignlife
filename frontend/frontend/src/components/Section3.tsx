@@ -7,7 +7,8 @@ import type { TypeKey, PlanTask, AIOptTask, TLRow, PlanAnalysis } from "../types
 import { getCat } from "../data/categories";
 import { CATS } from "../data/categories";
 import { TYPE_DATA } from "../data/typeData";
-import { aiOptimizePlan, analyzePlan } from "../utils/aiOptimizer";
+import { analyzePlan } from "../utils/aiOptimizer";
+import { apiFetch, getApiError } from "../utils/api";
 import { Timeline } from "./Timeline";
 import { ScheduleToggle } from "./ui/ScheduleToggle";
 
@@ -37,6 +38,8 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
     optimized: AIOptTask[];
   } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [optimizeError, setOptimizeError] = useState<string | null>(null);
 
   const update = (id: number, patch: Partial<PlanTask>) =>
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
@@ -45,7 +48,8 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
 
   const handleAI = async () => {
     const analysis = analyzePlan(tasks, typeKey);
-    const fallbackOptimized = aiOptimizePlan(tasks, typeKey);
+    setIsOptimizing(true);
+    setOptimizeError(null);
 
     try {
       if (!userId) {
@@ -55,7 +59,7 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const response = await fetch("/api/plans/optimize", {
+      const response = await apiFetch("/api/plans/optimize", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -82,7 +86,7 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
       });
 
       if (!response.ok) {
-        throw new Error("ai request failed");
+        throw new Error(await getApiError(response));
       }
 
       const body = await response.json();
@@ -106,14 +110,12 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
       }));
 
       setAiData({ analysis, optimized });
-    } catch {
-      setAiData({
-        analysis,
-        optimized: fallbackOptimized,
-      });
+      setShowAI(true);
+    } catch (error) {
+      setOptimizeError(error instanceof Error ? error.message : "AI 분석 요청에 실패했습니다.");
+    } finally {
+      setIsOptimizing(false);
     }
-
-    setShowAI(true);
   };
 
   const tlRows: TLRow[] = tasks.filter(t => t.name.trim()).map(t => ({
@@ -384,13 +386,18 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
             <p className="text-xs text-violet-500 font-semibold mb-6">
               🔒 고정 일정은 절대 변경하지 않아요
             </p>
+            {optimizeError && (
+              <p role="alert" className="mb-4 text-sm font-semibold text-red-600">
+                {optimizeError}
+              </p>
+            )}
             <button
               onClick={handleAI}
-              disabled={tasks.filter(t => t.name.trim()).length === 0}
+              disabled={isOptimizing || tasks.filter(t => t.name.trim()).length === 0}
               className="inline-flex items-center gap-2.5 px-8 py-3.5 rounded-xl font-bold text-sm text-white shadow-md hover:shadow-lg hover:scale-[1.02] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-200"
               style={{ background: "linear-gradient(135deg, #7C6EF8 0%, #9F8BFA 100%)" }}
             >
-              <Bot className="w-4 h-4" />AI 분석 시작하기<ArrowRight className="w-4 h-4" />
+              <Bot className="w-4 h-4" />{isOptimizing ? "AI 분석 중..." : "AI 분석 시작하기"}<ArrowRight className="w-4 h-4" />
             </button>
           </div>
         ) : aiData && (

@@ -8,14 +8,18 @@ import { Section3 } from "../components/Section3";
 export default function App() {
   const [view, setView] = useState<ViewKey>("s1");
   const [userType, setUserType] = useState<TypeKey | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(() => localStorage.getItem("redesignlife.userId"));
+
+  const handleUserReady = (nextUserId: string) => {
+    localStorage.setItem("redesignlife.userId", nextUserId);
+    setUserId(nextUserId);
+  };
 
   const resolvedType: TypeKey = userType ?? "perfectionist";
 
   return (
 
-    <div 
-    
+    <div
       className="min-h-screen bg-background"
       style={{ fontFamily: "'Noto Sans KR', -apple-system, sans-serif" }}
     >
@@ -26,7 +30,7 @@ export default function App() {
         <Section1
           typeKey={userType}
           onSetType={setUserType}
-          onUserReady={setUserId}
+          onUserReady={handleUserReady}
           onNext={() => setView("s2")}
         />
       )}
