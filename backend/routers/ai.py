@@ -174,11 +174,12 @@ async def optimize_plan(
             break
         except AIResultValidationError as error:
             retry_feedback = str(error)
+        except AIOutputValidationError:
+            retry_feedback = "output did not match the required response schema"
         except (
             AINotConfiguredError,
             AIServiceTimeoutError,
             AIServiceError,
-            AIOutputValidationError,
         ) as error:
             return ai_error_response(error)
     else:

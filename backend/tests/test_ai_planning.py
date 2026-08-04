@@ -476,6 +476,22 @@ def test_optimize_maps_ai_errors(
     assert response.json()["error"]["code"] == error_code
 
 
+def test_optimize_retries_transient_schema_error(client_and_session) -> None:
+    client, testing_session = client_and_session
+    with testing_session() as db:
+        user_id = add_user(db)
+        db.commit()
+    fake = FakeAIService(
+        optimize_results=[AIOutputValidationError(), optimize_output()]
+    )
+    use_fake_ai(fake)
+
+    response = client.post("/api/plans/optimize", json=optimize_payload(user_id))
+
+    assert response.status_code == 200
+    assert fake.optimize_calls == 2
+
+
 def test_optimize_returns_503_without_api_key(client_and_session, monkeypatch) -> None:
     client, testing_session = client_and_session
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
