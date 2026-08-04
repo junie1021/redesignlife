@@ -1,7 +1,6 @@
 import os
 from contextlib import asynccontextmanager
 
-import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -133,4 +132,6 @@ def health_check() -> HealthResponse | JSONResponse:
 
 
 if __name__ == "__main__":
+    import uvicorn
+
     uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=True)

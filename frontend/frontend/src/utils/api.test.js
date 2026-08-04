@@ -14,13 +14,13 @@ test("builds an absolute API URL for the production backend", async () => {
   );
 });
 
-test("uses the ngrok backend by default in a production build", async () => {
+test("uses the Vercel backend by default in a production build", async () => {
   const api = await import("./api.js").catch(() => null);
 
   assert.ok(api, "API URL helper must exist");
   assert.equal(
     api.resolveApiBaseUrl({ PROD: true }),
-    "https://prognosis-thank-commotion.ngrok-free.dev",
+    "https://redesignlife-backend.vercel.app",
   );
 });
 

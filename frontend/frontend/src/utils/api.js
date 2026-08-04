@@ -1,6 +1,6 @@
-const productionApiBaseUrl = "https://prognosis-thank-commotion.ngrok-free.dev";
+const productionApiBaseUrl = "https://redesignlife-backend.vercel.app";
 
-// Selects an override when configured and the active ngrok backend in production.
+// Selects an override when configured and the hosted backend in production.
 export function resolveApiBaseUrl(env = import.meta.env) {
   const configuredBaseUrl = env?.VITE_API_BASE_URL?.trim();
 
