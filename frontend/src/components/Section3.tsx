@@ -8,6 +8,7 @@ import { getCat } from "../data/categories";
 import { CATS } from "../data/categories";
 import { TYPE_DATA } from "../data/typeData";
 import { aiOptimizePlan, analyzePlan } from "../utils/aiOptimizer";
+import { buildApiUrl } from "../utils/api.js";
 import { Timeline } from "./Timeline";
 import { ScheduleToggle } from "./ui/ScheduleToggle";
 
@@ -19,14 +20,51 @@ const mkPlan = (): PlanTask => ({
   endTime: "",
   priority: 0,
   scheduleType: "adjustable",
+  category: undefined,
 });
+
+const normalizeTimeInput = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const colonParts = trimmed.split(":");
+  if (colonParts.length === 2) {
+    const hour = Number(colonParts[0] ?? 0);
+    const minute = Number(colonParts[1] ?? 0);
+    const safeHour = hour > 23 ? 0 : hour;
+    const safeMinute = minute > 59 ? 59 : minute;
+    return `${String(safeHour).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
+  }
+
+  const digits = trimmed.replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) {
+    const hour = Number(digits || 0);
+    const safeHour = hour > 23 ? 0 : hour;
+    return String(safeHour).padStart(2, "0");
+  }
+
+  if (digits.length === 3) {
+    const hour = Number(digits.slice(0, 2) || 0);
+    const minute = Number(digits.slice(2, 3) || 0);
+    const safeHour = hour > 23 ? 0 : hour;
+    const safeMinute = minute > 5 ? 5 : minute;
+    return `${String(safeHour).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
+  }
+
+  const hour = Number(digits.slice(0, 2) || 0);
+  const minute = Number(digits.slice(2, 4) || 0);
+  const safeHour = hour > 23 ? 0 : hour;
+  const safeMinute = minute > 59 ? 59 : minute;
+  return `${String(safeHour).padStart(2, "0")}:${String(safeMinute).padStart(2, "0")}`;
+};
 
 interface Section3Props {
   typeKey: TypeKey;
+  userId: string | null;
   onRestart: () => void;
 }
 
-export function Section3({ typeKey, onRestart }: Section3Props) {
+export function Section3({ typeKey, userId, onRestart }: Section3Props) {
   const type = TYPE_DATA[typeKey];
 
   const [tasks, setTasks] = useState<PlanTask[]>([mkPlan(), mkPlan(), mkPlan()]);
@@ -42,11 +80,76 @@ export function Section3({ typeKey, onRestart }: Section3Props) {
   const addTask = () => setTasks(prev => [...prev, mkPlan()]);
   const deleteTask = (id: number) => setTasks(prev => prev.filter(t => t.id !== id));
 
-  const handleAI = () => {
-    setAiData({
-      analysis: analyzePlan(tasks, typeKey),
-      optimized: aiOptimizePlan(tasks, typeKey),
-    });
+  const handleAI = async () => {
+    const analysis = analyzePlan(tasks, typeKey);
+    const fallbackOptimized = aiOptimizePlan(tasks, typeKey);
+
+    try {
+      if (!userId) {
+        throw new Error("missing user id");
+      }
+
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const response = await fetch(buildApiUrl("/api/plans/optimize"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          date: tomorrow.toISOString().slice(0, 10),
+          available_start_time: "09:00",
+          available_end_time: "18:00",
+          tasks: tasks
+            .filter(task => task.name.trim())
+            .map(task => ({
+              title: task.name,
+              estimated_minutes: Math.max(
+                30,
+                task.startTime && task.endTime
+                  ? Math.max(30, Math.round((Number(task.endTime.slice(0, 2)) * 60 + Number(task.endTime.slice(3, 5)) - (Number(task.startTime.slice(0, 2)) * 60 + Number(task.startTime.slice(3, 5)))) / 15) * 15)
+                  : 60,
+              ),
+              priority: Math.max(1, Math.min(3, task.priority || 1)),
+              category: task.category ?? getCat(task.name),
+            })),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("ai request failed");
+      }
+
+      const body = await response.json();
+      const optimized = body.data.optimized_schedules.map((item: {
+        title: string;
+        start_time: string;
+        end_time: string;
+        reason: string;
+        category?: string | null;
+      }, index: number): AIOptTask => ({
+        id: index + 1,
+        name: item.title,
+        aiStart: item.start_time,
+        aiEnd: item.end_time,
+        isFixed: false,
+        isAIAdded: true,
+        changed: true,
+        catKey: getCat(item.title),
+        note: item.category ?? "",
+        reason: item.reason,
+      }));
+
+      setAiData({ analysis, optimized });
+    } catch {
+      setAiData({
+        analysis,
+        optimized: fallbackOptimized,
+      });
+    }
+
     setShowAI(true);
   };
 
@@ -194,7 +297,8 @@ export function Section3({ typeKey, onRestart }: Section3Props) {
               <tbody className="divide-y divide-border">
                 {tasks.map(task => {
                   const hasCat = task.name.trim().length > 0;
-                  const cat = CATS[hasCat ? getCat(task.name) : "other"];
+                  const catKey = task.category ?? (hasCat ? getCat(task.name) : "other");
+                  const cat = CATS[catKey];
                   return (
                     <tr key={task.id} className="bg-white hover:bg-muted/10 transition-colors">
                       <td className="px-3 py-3">
@@ -208,25 +312,49 @@ export function Section3({ typeKey, onRestart }: Section3Props) {
                       </td>
                       <td className="px-3 py-3 text-center">
                         <input
-                          type="time"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={5}
+                          placeholder="09:00"
                           value={task.startTime}
-                          onChange={e => update(task.id, { startTime: e.target.value })}
-                          className="w-24 text-center text-xs bg-muted/50 border border-border rounded-lg px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300 cursor-pointer"
+                          onChange={e => update(task.id, { startTime: normalizeTimeInput(e.target.value) })}
+                          className="w-24 text-center text-xs bg-muted/50 border border-border rounded-lg px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300"
                         />
                       </td>
                       <td className="px-3 py-3 text-center">
                         <input
-                          type="time"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={5}
+                          placeholder="10:00"
                           value={task.endTime}
-                          onChange={e => update(task.id, { endTime: e.target.value })}
-                          className="w-24 text-center text-xs bg-muted/50 border border-border rounded-lg px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300 cursor-pointer"
+                          onChange={e => update(task.id, { endTime: normalizeTimeInput(e.target.value) })}
+                          className="w-24 text-center text-xs bg-muted/50 border border-border rounded-lg px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-orange-300"
                         />
                       </td>
                       <td className="px-3 py-3 text-center">
                         {hasCat ? (
-                          <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full ${cat.bg} ${cat.text}`}>
-                            <Bot className="w-3 h-3" />{cat.label}
-                          </span>
+                          <div className="flex items-center justify-center gap-2">
+                            <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full ${cat.bg} ${cat.text}`}>
+                              <Bot className="w-3 h-3" />{cat.label}
+                            </span>
+                            <select
+                              value={task.category ?? "auto"}
+                              onChange={e => {
+                                const next = e.target.value;
+                                update(task.id, {
+                                  category: next === "auto" ? undefined : next as CatKey,
+                                });
+                              }}
+                              className="text-[11px] bg-muted/60 border border-border rounded-lg px-2 py-1 text-muted-foreground focus:outline-none focus:ring-2 focus:ring-orange-300"
+                              aria-label="카테고리 수동 선택"
+                            >
+                              <option value="auto">AI 자동</option>
+                              {Object.entries(CATS).map(([key, value]) => (
+                                <option key={key} value={key}>{value.label}</option>
+                              ))}
+                            </select>
+                          </div>
                         ) : (
                           <span className="text-xs text-muted-foreground/40">—</span>
                         )}

@@ -3,14 +3,16 @@ import { ChevronRight, ChevronLeft, Sparkles, Check, Star, ArrowRight, RotateCcw
 import type { TypeKey } from "../types";
 import { TYPE_DATA } from "../data/typeData";
 import { QUESTIONS } from "../data/questions";
+import { buildApiUrl } from "../utils/api.js";
 
 interface Section1Props {
   typeKey: TypeKey | null;
   onSetType: (t: TypeKey) => void;
+  onUserReady?: (userId: string) => void;
   onNext: () => void;
 }
 
-export function Section1({ typeKey, onSetType, onNext }: Section1Props) {
+export function Section1({ typeKey, onSetType, onUserReady, onNext }: Section1Props) {
   const [stage, setStage] = useState<"quiz" | "result">(typeKey ? "result" : "quiz");
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<(TypeKey | null)[]>(
@@ -29,7 +31,7 @@ export function Section1({ typeKey, onSetType, onNext }: Section1Props) {
     setAnswers(updated);
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!currentAnswer) return;
     if (isLast) {
       const counts: Record<TypeKey, number> = {
@@ -40,6 +42,26 @@ export function Section1({ typeKey, onSetType, onNext }: Section1Props) {
         ([, a], [, b]) => b - a,
       )[0][0] as TypeKey;
       onSetType(dominant);
+
+      try {
+        const response = await fetch(buildApiUrl("/api/users/type-test"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            answers: answers.filter(Boolean) as TypeKey[],
+          }),
+        });
+
+        if (response.ok) {
+          const body = await response.json();
+          onUserReady?.(body.data.user_id);
+        }
+      } catch {
+        // Ignore backend sync errors and continue with the local UX.
+      }
+
       setStage("result");
     } else {
       setCurrentQ(q => q + 1);
