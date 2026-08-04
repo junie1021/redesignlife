@@ -16,6 +16,15 @@ def validate_hhmm(value: object) -> object:
     return value
 
 
+def normalize_ai_hhmm(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("time must use HH:MM format")
+    match = re.fullmatch(f"({HHMM_PATTERN})(?::00)?", value)
+    if match is None:
+        raise ValueError("time must use HH:MM format")
+    return match.group(1)
+
+
 def validate_date_string(value: object) -> object:
     if not isinstance(value, str) or re.fullmatch(DATE_PATTERN, value) is None:
         raise ValueError("date must use YYYY-MM-DD format")
@@ -49,7 +58,7 @@ class RecoveryPlanItem(BaseModel):
     @field_validator("start_time", "end_time", mode="before")
     @classmethod
     def validate_times(cls, value: object) -> object:
-        return validate_hhmm(value)
+        return normalize_ai_hhmm(value)
 
     @field_validator("title", "reason")
     @classmethod
@@ -135,7 +144,7 @@ class OptimizedSchedule(BaseModel):
     @field_validator("start_time", "end_time", mode="before")
     @classmethod
     def validate_times(cls, value: object) -> object:
-        return validate_hhmm(value)
+        return normalize_ai_hhmm(value)
 
     @field_validator("title", "reason")
     @classmethod
