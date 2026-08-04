@@ -8,6 +8,7 @@ import { getCat } from "../data/categories";
 import { CATS } from "../data/categories";
 import { TYPE_DATA } from "../data/typeData";
 import { aiOptimizePlan, analyzePlan } from "../utils/aiOptimizer";
+import { buildApiUrl } from "../utils/api.js";
 import { Timeline } from "./Timeline";
 import { ScheduleToggle } from "./ui/ScheduleToggle";
 
@@ -91,7 +92,7 @@ export function Section3({ typeKey, userId, onRestart }: Section3Props) {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const response = await fetch("/api/plans/optimize", {
+      const response = await fetch(buildApiUrl("/api/plans/optimize"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

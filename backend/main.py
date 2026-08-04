@@ -38,6 +38,15 @@ def get_cors_origins() -> list[str]:
     ]
 
 
+def get_cors_origin_regex() -> str | None:
+    """Return the configured production-origin pattern for CORS."""
+    configured_regex = os.getenv("CORS_ORIGIN_REGEX")
+    if configured_regex is not None:
+        return configured_regex.strip() or None
+
+    return r"^https://[a-z0-9-]+\.vercel\.app$"
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -49,6 +58,7 @@ app = FastAPI(title="Redesign Life API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
+    allow_origin_regex=get_cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -75,6 +85,34 @@ app.include_router(users_router)
 app.include_router(schedules_router)
 app.include_router(daily_summary_router)
 app.include_router(ai_router)
+
+
+API_ENDPOINTS = [
+    "POST /api/users/type-test",
+    "POST /api/schedules",
+    "GET /api/days/{date}/tasks",
+    "GET /api/schedules/range",
+    "POST /api/schedules/check-conflicts",
+    "PATCH /api/schedules/{schedule_id}",
+    "DELETE /api/schedules/{schedule_id}",
+    "GET /api/daily-summary",
+    "POST /api/days/{date}/recovery",
+    "POST /api/plans/optimize",
+]
+
+
+@app.get("/api", include_in_schema=False)
+@app.get("/api/", include_in_schema=False)
+def api_index() -> dict[str, object]:
+    """Return links and route signatures for the public API."""
+    return {
+        "success": True,
+        "data": {
+            "docs": "/docs",
+            "health": "/health",
+            "endpoints": API_ENDPOINTS,
+        },
+    }
 
 
 @app.get(

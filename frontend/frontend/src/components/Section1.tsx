@@ -3,6 +3,7 @@ import { ChevronRight, ChevronLeft, Sparkles, Check, Star, ArrowRight, RotateCcw
 import type { TypeKey } from "../types";
 import { TYPE_DATA } from "../data/typeData";
 import { QUESTIONS } from "../data/questions";
+import { buildApiUrl } from "../utils/api.js";
 
 interface Section1Props {
   typeKey: TypeKey | null;
@@ -43,7 +44,7 @@ export function Section1({ typeKey, onSetType, onUserReady, onNext }: Section1Pr
       onSetType(dominant);
 
       try {
-        const response = await fetch("/api/users/type-test", {
+        const response = await fetch(buildApiUrl("/api/users/type-test"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
