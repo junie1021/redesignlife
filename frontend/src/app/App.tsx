@@ -13,13 +13,10 @@ export default function App() {
   const resolvedType: TypeKey = userType ?? "perfectionist";
 
   return (
-
-    <div 
-    
+    <div
       className="min-h-screen bg-background"
       style={{ fontFamily: "'Noto Sans KR', -apple-system, sans-serif" }}
     >
-
       <Nav view={view} onNavigate={setView} />
 
       {view === "s1" && (
